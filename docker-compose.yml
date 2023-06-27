@@ -1,0 +1,101 @@
+version: '3'
+
+services:
+  # rabbitmq:
+  #   image: rabbitmq:3.10-management
+  #   container_name: rabiitmq-container
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  rabbitmq:
+    image: rabbitmq:3.10
+    container_name: rabbitmq-container
+    ports:
+      - "5672:5672"
+    volumes:
+      - ./rabbitmq:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=dani
+      - RABBITMQ_DEFAULT_PASS=holabb
+
+
+  web:
+    build: .
+    container_name: django-container
+    # command: python manage.py runserver --settings=myshop.settings.local 0.0.0.0:8000
+    # command: python manage.py runserver 0.0.0.0:8000
+    command: ["./wait-for-it.sh", "db:5432", "--",
+              "uwsgi", "--ini", "/app/config/uwsgi/uwsgi.ini"]
+    restart: always # indica que quieres que el contenedor se reinicie automáticamente siempre que se detenga o falle.
+    volumes:
+      - .:/app
+    # ports:
+    #   - "8000:8000"
+    #Al establecer la variable de entorno DJANGO_SETTINGS_MODULE en educa.settings.prod en tu entorno de Docker,
+    #le estás indicando a Docker dónde encontrar la configuración específica para el entorno de producción de tu aplicación Django.
+    environment: 
+      - DJANGO_SETTINGS_MODULE=myshop.settings.prod
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    depends_on:
+      - db
+      - rabbitmq
+      - redis
+
+  db:
+    image: postgres:14.5
+    restart: always
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    command: bash -c "chmod 0700 /var/lib/postgresql/data && docker-entrypoint.sh postgres"
+
+
+  celery:
+    build: .
+    container_name: celery-container
+    command: celery -A myshop worker -l info
+    volumes:
+      - .:/app
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    depends_on:
+      - rabbitmq
+      
+  flower:
+    build: .
+    container_name: flower-container
+    command: celery -A myshop flower
+    volumes:
+      - .:/app
+    ports:
+      - "5555:5555"
+    depends_on:
+      - rabbitmq
+
+  redis:
+    image: redis:latest #ultima version de redis
+    container_name: redis-container
+    ports:
+      - "6379:6379"
+
+  nginx:
+    image: nginx:1.23.1
+    restart: always
+    volumes:
+      - ./config/nginx:/etc/nginx/templates
+      - .:/app
+    ports:
+      - "80:80"
+      - "443:443"
+
+
+
+
+
